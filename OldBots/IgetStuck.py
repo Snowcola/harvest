@@ -23,7 +23,7 @@ game = hlt.Game()
 # As soon as you call "ready" function below, the 2 second per turn timer will start.
 directions = [Direction.North, Direction.South, Direction.East, Direction.West, Direction.Still]
 
-game.ready("Snowcola")
+game.ready("Snowcola V3")
 
 # Now that your bot is initialized, save a message to yourself in the log file with some important information.
 #   Here, you log here your id, which you can always fetch from the game object by using my_id.

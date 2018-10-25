@@ -18,7 +18,7 @@ directions = [
     Direction.Still
 ]
 
-game.ready("Snowcola")
+game.ready("Snowcola V4")
 
 # Now that your bot is initialized, save a message to yourself in the log file with some important information.
 #   Here, you log here your id, which you can always fetch from the game object by using my_id.
@@ -26,15 +26,16 @@ logging.info("Successfully created bot! My Player ID is {}.".format(
     game.my_id))
 """ <<<Game Loop>>> """
 ship_states = {}
+MAX_HALITE = constants.MAX_HALITE
 endstage = constants.MAX_TURNS - 10
 shipyard_cards = game.me.shipyard.position.get_surrounding_cardinals()
 logging.info(shipyard_cards)
 while True:
-
+    logging.warn(f"states: {ship_states}")
     game.update_frame()
     me = game.me
     game_map = game.game_map
-
+    logging.info(game_map)
     # calculate how many turns it will take the farthest ship to deposit its
     # halite if it starts now
     turns_left = constants.MAX_TURNS - game.turn_number
@@ -51,16 +52,16 @@ while True:
         if ship.id not in ship_states.keys():
             ship_states[ship.id] = 'harvest'
 
-        if ship.halite_amount > constants.MAX_HALITE * 0.9:
+        if ship.halite_amount > MAX_HALITE * 0.9:
             ship_states[ship.id] = 'dump'
 
         if turns_left <= furthest_ship_turns:
             ship_states[ship.id] = 'endgame'
 
         if ship_states[ship.id] == 'endgame':
-            logging.warn("ENDGAME")
-            move = game_map.naive_navigate(ship, me.shipyard.position)
-            command_queue.append(ship.move(move))
+            #logging.warn("ENDGAME")
+            #move = game_map.naive_navigate(ship, me.shipyard.position)
+            #command_queue.append(ship.move(move))
 
             if ship.position in shipyard_cards:
                 game_map[me.shipyard.position].ship = None
@@ -69,9 +70,8 @@ while True:
             #command_queue.append(ship.move(move))
 
         elif ship_states[ship.id] == 'harvest':
-
-            if game_map[ship.
-                        position].halite_amount < constants.MAX_HALITE * 0.10:
+            logging.info(f"Ship: {ship.id} Harvesting")
+            if game_map[ship.position].halite_amount < MAX_HALITE * 0.10:
 
                 logging.info(f"""{ship.id} moving, not enough halite HAL: 
                 {game_map[ship.position].halite_amount}""")
