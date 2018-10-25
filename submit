@@ -1,0 +1,17 @@
+#!/usr/bin/env python3
+# Python 3.6
+
+import os
+import zipfile
+
+zf = zipfile.ZipFile("bot.zip", "w")
+for dirname, subdirs, files in os.walk("hlt/"):
+    zf.write(dirname)
+    for filename in files:
+        zf.write(os.path.join(dirname, filename))
+zf.write("MyBot.py")
+zf.close()
+
+
+files = ["MyBot.py","halite/"]
+
