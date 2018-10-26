@@ -5,7 +5,7 @@ from hlt import constants
 from hlt.positionals import Direction, Position
 from hlt.game_map import GameMap, Player
 from hlt.entity import Entity
-
+import random
 import logging
 from modes import Modes
 
@@ -36,13 +36,18 @@ class Navigation:
         else:
             return 0
 
+    def start_positions(self):
+        staring_positions = self.player.shipyard.position.get_surrounding_cardinals()
+        return staring_positions
+
 
 class ShipState:
     def __init__(self, mode, prev_move=None):
-        self.mode = {}
-        self.prev_move = {}
+        self.mode = mode
+        self.prev_move = prev_move
     
-    def __repr__()
+    def __repr__(self):
+        return f"ShipState(mode: {self.mode}, prev_move:{self.prev_move}"
 
 
 """ <<<Game Begin>>> """
@@ -68,7 +73,7 @@ logging.info("Successfully created bot! My Player ID is {}.".format(
 ship_states = {}
 endstage = constants.MAX_TURNS - 10
 shipyard_cards = game.me.shipyard.position.get_surrounding_cardinals()
-logging.info(shipyard_cards)
+logging.info(directions[:4])
 
 while True:
 
@@ -82,14 +87,20 @@ while True:
     command_queue = []
 
     nav = Navigation(game_map, me)
-    logging.info(ship_states)
-    logging.info(f"Turns {nav.farthest_ship_distance()}")
+    turns_to_recall = nav.farthest_ship_distance()+len(ship_states)*0.5
+    logging.warn(f"ships: {me.get_ships()}")
+
+    ## Keep ships out of shipyard for first 5 turns
+    if game.turn_number < 5:
+        game_map[me.shipyard.position].ship = "start of game"
 
     for ship in me.get_ships():
         if ship.id not in ship_states.keys():
             ship_states[ship.id] = ShipState(Modes.collecting)
 
-        if game.turn_number > endstage:
+        prev_move = ship_states[ship.id].prev_move
+
+        if constants.MAX_TURNS-game.turn_number <= turns_to_recall:
             move = game_map.naive_navigate(ship, me.shipyard.position)
             command_queue.append(ship.move(move))
 
@@ -97,8 +108,8 @@ while True:
                 game_map[me.shipyard.position].ship = None
 
         elif ship_states[ship.id].mode == Modes.collecting:
-            if ship.halite_amount > constants.MAX_HALITE * 0.9:
-                ship_states.mode[ship.id] = Modes.depositing
+            if ship.halite_amount > constants.MAX_HALITE * 0.1:
+                ship_states[ship.id].mode = Modes.depositing
 
             if game_map[ship.
                         position].halite_amount < constants.MAX_HALITE * 0.10:
@@ -114,16 +125,23 @@ while True:
                         halite = game_map[loc].halite_amount
                     halite_locations[direction] = halite
                     cardinal_direction_map[direction] = loc
+                
 
                 best_direction = max(
                     halite_locations, key=halite_locations.get)
                 destination = cardinal_direction_map[best_direction]
 
                 if destination not in confirmed_moves:
-                    confirmed_moves.append(destination)
-                    move = game_map.naive_navigate(ship, destination)
-                    command_queue.append(ship.move(move))
-                    ship_states[ship.id].prev_move = move
+                    if prev_move is not Direction.Still:
+                        confirmed_moves.append(destination)
+                        move = game_map.naive_navigate(ship, destination)
+                        command_queue.append(ship.move(move))
+                        ship_states[ship.id].prev_move = move
+                    else: 
+                        dest = ship.position.directional_offset(random.choice(directions))
+                        move = game_map.naive_navigate(ship, dest)
+                        ship_states[ship.id].prev_move = move
+                        command_queue.append(ship.move(move))
                 else:
                     best_direction = Direction.Still
                     confirmed_moves.append(ship.position)
