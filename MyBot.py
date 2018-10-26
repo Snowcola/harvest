@@ -3,17 +3,47 @@
 import hlt
 from hlt import constants
 from hlt.positionals import Direction, Position
-from hlt.game_map import GameMap
+from hlt.game_map import GameMap, Player
 import random
 import logging
 from modes import Modes
 
 
-def turns_to_farthest_ship(map: GameMap, ships: list, dropoff: Position):
-    #get manhattan distance
-    distance = map.calculate_distance(ship, dropoff)
-    turns = distance * 1.2
-    return turns
+class Navigation:
+    def __init__(self, gameMap: GameMap, player: Player):
+        self.game_map = gameMap
+        self.player = player
+        logging.info(f"ships :{player.get_dropoffs()+[self.player.shipyard]}")
+    
+    def turns_to_target(self, start: Position, target: Position) -> int:
+        start = self.game_map.normalize(start)
+        target = self.game_map.normalize(target)
+        distance = abs(target - start)
+        turns = distance.x + distance.y
+        return turns
+
+    def farthest_ship_position(self, ships: list, target: Position) -> Position:
+        if ships:
+            distances = [self.game_map.calculate_distance(ship.position, target) for ship in ships]
+            max_distance = max(distances)
+            furthest_ship = ships[distances.index(max_distance)]
+            return furthest_ship.position
+        else:
+            return target
+    def turns_to_recall_all(self) -> int:
+        ships = self.player.get_ships()
+        logging.info(ships)
+        targets = self.player.get_dropoffs()+[self.player.shipyard]
+        targets = [target.position for target in targets]
+        turns = []
+        for target in targets:
+            farthest = self.farthest_ship_position(ships, target)
+            logging.info(f"target: {target}, ship: {farthest}")
+            turns.append(self.turns_to_target(farthest, target))
+        if turns:
+            return max(turns) 
+        else: 
+            return 0
 
 """ <<<Game Begin>>> """
 
@@ -45,6 +75,10 @@ while True:
     game_map = game.game_map
 
     command_queue = []
+
+    nav = Navigation(game_map, me)
+    logging.info(f"Turns {nav.turns_to_recall_all()}")
+
 
     for ship in me.get_ships():
         if ship.id not in ship_states.keys():
