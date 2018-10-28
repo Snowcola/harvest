@@ -3,8 +3,8 @@
 import hlt
 from hlt import constants
 from hlt.positionals import Direction, Position
-from hlt.game_map import GameMap, Player
-from hlt.entity import Entity
+from hlt.game_map import GameMap, Player, MapCell
+from hlt.entity import Entity, Ship
 import random
 import logging
 from modes import Modes
@@ -40,6 +40,38 @@ class Navigation:
         staring_positions = self.player.shipyard.position.get_surrounding_cardinals()
         return staring_positions
 
+    def can_afford_move(self, ship: Ship):
+        location_halite = self.game_map[ship.position].halite_amount
+        move_cost = location_halite * 0.1
+        return ship.halite_amount >= move_cost
+
+    def low_hal_location(self, ship):
+        return self.game_map[ship.position].halite_amount < constants.MAX_HALITE * 0.1
+
+    def should_move(self, ship: Ship):
+        return self.can_afford_move(ship) and self.low_hal_location(ship)
+
+
+    def update(self, game_map: GameMap, player: Player):
+        self.game_map = game_map
+        self.player = player
+
+    def select_move_hueristic(self):
+
+    def select_move_richness(self):
+
+    def calc_cluster_values(game_map: GameMap) -> {"id": cluster_value: int}:
+
+class Cluster:
+    def __init__(self, game_map: GameMap, center_cell: MapCell):
+        cluster_Center = center_cell
+        cluster = [center_cell]
+        for x in range(-1,2):
+            for y in range(-1,2):
+                cell = game_map[center_cell.position.directional_offset((x,y))]
+                cluster.append(cell)
+        self.cluster = cluster
+
 
 class ShipState:
     def __init__(self, mode, prev_move=None):
@@ -49,6 +81,7 @@ class ShipState:
     def __repr__(self):
         return f"ShipState(mode: {self.mode}, prev_move:{self.prev_move}"
 
+## RANDOMIZE NAVIGATION DIRECTION
 
 """ <<<Game Begin>>> """
 
@@ -62,7 +95,9 @@ directions = [
     Direction.Still
 ]
 
-game.ready("Snowcola")
+MAX_HALITE = constants.MAX_HALITE
+MAX_TURNS = constants.MAX_TURNS
+game.ready("Snowcola_v4")
 
 # Now that your bot is initialized, save a message to yourself in the log file with some important information.
 #   Here, you log here your id, which you can always fetch from the game object by using my_id.
@@ -75,32 +110,33 @@ endstage = constants.MAX_TURNS - 10
 shipyard_cards = game.me.shipyard.position.get_surrounding_cardinals()
 logging.info(directions[:4])
 
+nav = Navigation(game.game_map, game.me)
+
 while True:
 
     game.update_frame()
-
-    confirmed_moves = []
-
     me = game.me
     game_map = game.game_map
+    nav.update(game_map, me)
 
+    confirmed_moves = []
     command_queue = []
 
-    nav = Navigation(game_map, me)
+    
     turns_to_recall = nav.farthest_ship_distance()+len(ship_states)*0.5
-    logging.warn(f"ships: {me.get_ships()}")
 
-    ## Keep ships out of shipyard for first 5 turns
-    if game.turn_number < 5:
-        game_map[me.shipyard.position].ship = "start of game"
+    logging.info(f'ships {me.get_ships()}')
 
     for ship in me.get_ships():
+        cur_loc_halite = game_map[ship.position].halite_amount
+
+
         if ship.id not in ship_states.keys():
             ship_states[ship.id] = ShipState(Modes.collecting)
 
         prev_move = ship_states[ship.id].prev_move
 
-        if constants.MAX_TURNS-game.turn_number <= turns_to_recall:
+        if MAX_TURNS - game.turn_number <= turns_to_recall:
             move = game_map.naive_navigate(ship, me.shipyard.position)
             command_queue.append(ship.move(move))
 
@@ -108,11 +144,11 @@ while True:
                 game_map[me.shipyard.position].ship = None
 
         elif ship_states[ship.id].mode == Modes.collecting:
-            if ship.halite_amount > constants.MAX_HALITE * 0.1:
+            if ship.halite_amount > MAX_HALITE * 0.90:
                 ship_states[ship.id].mode = Modes.depositing
 
-            if game_map[ship.
-                        position].halite_amount < constants.MAX_HALITE * 0.10:
+
+            if nav.should_move(ship):
                 halite_locations = {}
                 cardinal_direction_map = {}
                 for i, loc in enumerate(
