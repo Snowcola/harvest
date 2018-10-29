@@ -124,6 +124,12 @@ class MapCell:
         """
         self.ship = ship
 
+    def move_cost(self):
+        """
+        Return cost to leave this cell
+        """
+        return self.halite_amount * 0.1
+
     def __eq__(self, other):
         return self.position == other.position
 
