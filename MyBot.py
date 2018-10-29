@@ -57,10 +57,22 @@ class Navigation:
         self.player = player
 
     def select_move_hueristic(self):
+        pass
 
     def select_move_richness(self):
+        pass
 
-    def calc_cluster_values(game_map: GameMap) -> {"id": cluster_value: int}:
+    def cluster_map(self):
+        """currently just gets clusters around the highest oncentraction halite cells"""
+        all_halite = {cell.position:cell.halite_amount for cell in game_map}
+        logging.info(all_halite)
+        halite_over_600 = {k:v for (k,v) in all_halite if v > 600}
+        logging.info(halite_over_600)
+        return all_halite
+
+
+
+
 
 class Cluster:
     def __init__(self, game_map: GameMap, center_cell: MapCell):
@@ -71,6 +83,13 @@ class Cluster:
                 cell = game_map[center_cell.position.directional_offset((x,y))]
                 cluster.append(cell)
         self.cluster = cluster
+
+    @property
+    def halite_amount(self):
+        """
+        :return: total halite amount in 9 cell cluster
+        """
+        return (sum([cell.halite_amount for cell in cluster]))
 
 
 class ShipState:
@@ -144,7 +163,7 @@ while True:
                 game_map[me.shipyard.position].ship = None
 
         elif ship_states[ship.id].mode == Modes.collecting:
-            if ship.halite_amount > MAX_HALITE * 0.90:
+            if ship.halite_amount > MAX_HALITE * 0.95:
                 ship_states[ship.id].mode = Modes.depositing
 
 
@@ -156,7 +175,7 @@ while True:
                     [ship.position]):
                     direction = directions[i]
                     if direction == Direction.Still:
-                        halite = game_map[loc].halite_amount * 2
+                        halite = game_map[loc].halite_amount * 1.8
                     else:
                         halite = game_map[loc].halite_amount
                     halite_locations[direction] = halite
