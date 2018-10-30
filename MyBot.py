@@ -157,7 +157,7 @@ directions = [
 
 MAX_HALITE = constants.MAX_HALITE
 MAX_TURNS = constants.MAX_TURNS
-game.ready("Snowcola_v5")
+game.ready("Snowcola_v6")
 
 # Now that your bot is initialized, save a message to yourself in the log file with some important information.
 #   Here, you log here your id, which you can always fetch from the game object by using my_id.
