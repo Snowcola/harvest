@@ -1,5 +1,5 @@
 import queue
-
+import random
 from . import constants
 from .entity import Entity, Shipyard, Ship, Dropoff
 from .positionals import Direction, Position
@@ -245,7 +245,10 @@ class GameMap:
         """
         # No need to normalize destination, since get_unsafe_moves
         # does that
-        for direction in self.get_unsafe_moves(ship.position, destination):
+        unsafe_moves = self.get_unsafe_moves(ship.position, destination)
+        random.shuffle(unsafe_moves)
+
+        for direction in unsafe_moves:
             target_pos = ship.position.directional_offset(direction)
             if not self[target_pos].is_occupied:
                 self[target_pos].mark_unsafe(ship)
