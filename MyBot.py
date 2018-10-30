@@ -56,46 +56,63 @@ class Navigation:
         self.game_map = game_map
         self.player = player
 
-    def select_move_hueristic(self):
+    def select_move_hueristic(self, ship: Ship):
+        surrounding_positions = ship.position.get_surrounding_cardinals()
+        current_position = ship.position
+        halite_locations = {(position):self.game_map[position].halite_amount for position in surrounding_positions}
+        halite_locations[current_position] = self.game_map[current_position].halite_amount * 1.8
+        new_position = max(halite_locations, key=halite_locations.get)
+        return new_position #
+        
+        # check surrounding locations
+        # for each location chech halite ammount
+
+    def select_move_richness(self, ship: Ship):
         pass
 
-    def select_move_richness(self):
-        pass
+    def cluster_map(self, top_n: int = 10):
+        """returns a list of top clusters"""
+        all_halite = {cell.position:Cluster(self.game_map, cell).halite_amount for cell in self.game_map}
+        sorted_cells = sorted(all_halite, key=all_halite.get, reverse=True)
+        sorted_cells = sorted_cells[:top_n]
+        top_clusters = [Cluster(self.game_map, self.game_map[cell]) for cell in sorted_cells]
 
-    def cluster_map(self):
-        """currently just gets clusters around the highest oncentraction halite cells"""
-        all_halite = {cell.position:cell.halite_amount for cell in game_map}
-        logging.info(all_halite)
-        halite_over_600 = {k:v for (k,v) in all_halite if v > 600}
-        logging.info(halite_over_600)
-        return all_halite
-
-
-
+        return top_clusters
 
 
 class Cluster:
     def __init__(self, game_map: GameMap, center_cell: MapCell):
-        cluster_Center = center_cell
-        cluster = [center_cell]
+        self.game_map = game_map
+        self.cluster_center = center_cell
+        self.cluster = [center_cell]
         for x in range(-1,2):
             for y in range(-1,2):
-                cell = game_map[center_cell.position.directional_offset((x,y))]
-                cluster.append(cell)
-        self.cluster = cluster
+                try:
+                    cell = self.game_map[self.cluster_center.position.directional_offset((x,y))]
+                    self.cluster.append(cell)                 
+                except Exception:
+                    logging.warn(f"can't find cell at {(x,y)}")
+        
 
     @property
     def halite_amount(self):
         """
         :return: total halite amount in 9 cell cluster
         """
-        return (sum([cell.halite_amount for cell in cluster]))
+        return (sum([cell.halite_amount for cell in self.cluster]))
+
+    def __repr__(self):
+        return f"Cluster {self.cluster_center}, halite: {self.halite_amount}"
 
 
 class ShipState:
     def __init__(self, mode, prev_move=None):
         self.mode = mode
         self.prev_move = prev_move
+        self.current_move = None
+
+    def reset_moves(self):
+        self.current_move = None
     
     def __repr__(self):
         return f"ShipState(mode: {self.mode}, prev_move:{self.prev_move}"
@@ -130,7 +147,7 @@ shipyard_cards = game.me.shipyard.position.get_surrounding_cardinals()
 logging.info(directions[:4])
 
 nav = Navigation(game.game_map, game.me)
-
+logging.info(f"Cluster Map {nav.cluster_map()}")
 while True:
 
     game.update_frame()
@@ -141,10 +158,10 @@ while True:
     confirmed_moves = []
     command_queue = []
 
+    # reset current moves in ship state
+    [shipstate.reset_moves() for shipstate in ship_states.values()]
     
     turns_to_recall = nav.farthest_ship_distance()+len(ship_states)*0.5
-
-    logging.info(f'ships {me.get_ships()}')
 
     for ship in me.get_ships():
         cur_loc_halite = game_map[ship.position].halite_amount
@@ -156,11 +173,13 @@ while True:
         prev_move = ship_states[ship.id].prev_move
 
         if MAX_TURNS - game.turn_number <= turns_to_recall:
-            move = game_map.naive_navigate(ship, me.shipyard.position)
-            command_queue.append(ship.move(move))
-
             if ship.position in shipyard_cards:
+                move = game_map.naive_navigate(ship, me.shipyard.position)
+                command_queue.append(ship.move(move))
                 game_map[me.shipyard.position].ship = None
+            else:
+                move = game_map.naive_navigate(ship, random.choice(shipyard_cards))
+                command_queue.append(ship.move(move))
 
         elif ship_states[ship.id].mode == Modes.collecting:
             if ship.halite_amount > MAX_HALITE * 0.95:
@@ -168,23 +187,7 @@ while True:
 
 
             if nav.should_move(ship):
-                halite_locations = {}
-                cardinal_direction_map = {}
-                for i, loc in enumerate(
-                        ship.position.get_surrounding_cardinals() +
-                    [ship.position]):
-                    direction = directions[i]
-                    if direction == Direction.Still:
-                        halite = game_map[loc].halite_amount * 1.8
-                    else:
-                        halite = game_map[loc].halite_amount
-                    halite_locations[direction] = halite
-                    cardinal_direction_map[direction] = loc
-                
-
-                best_direction = max(
-                    halite_locations, key=halite_locations.get)
-                destination = cardinal_direction_map[best_direction]
+                destination = nav.select_move_hueristic(ship)
 
                 if destination not in confirmed_moves:
                     if prev_move is not Direction.Still:

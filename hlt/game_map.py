@@ -165,6 +165,16 @@ class GameMap:
             return self._cells[location.position.y][location.position.x]
         return None
 
+    def __iter__(self):
+        self.__i = 0
+        __cells = []
+        for row in self._cells:
+            for cell in row:
+                __cells.append(cell)
+        return iter(__cells)
+
+
+
     def calculate_distance(self, source, target):
         """
         Compute the Manhattan distance between two locations.
