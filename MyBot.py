@@ -17,7 +17,7 @@ class Navigation:
         self.ships = player.get_ships()
         self.bases = [player.shipyard] + player.get_dropoffs()
         logging.info(f"ships :{player.get_dropoffs()+[self.player.shipyard]}")
-
+        # TODO: make cluster map a prop of navi class
     def farthest_ship_distance(self) -> int:
         bases = self.bases
         ships = self.ships
@@ -55,20 +55,34 @@ class Navigation:
     def update(self, game_map: GameMap, player: Player):
         self.game_map = game_map
         self.player = player
+        self.ships = player.get_ships()
 
-    def select_move_hueristic(self, ship: Ship):
+    def select_move_hueristic(self, ship: Ship, destination: Position  = None):
         surrounding_positions = ship.position.get_surrounding_cardinals()
+        if destination:
+            #should trigger recalc of map here is this evals to none
+            direction_of_cluster = self.game_map._get_target_direction(ship.position, destination)
+            best_positions = [ship.position.directional_offset(direction) for direction in direction_of_cluster if direction is not None]
+            if best_positions != None:
+                surrounding_positions = best_positions
         current_position = ship.position
         halite_locations = {(position):self.game_map[position].halite_amount for position in surrounding_positions}
         halite_locations[current_position] = self.game_map[current_position].halite_amount * 1.8
         new_position = max(halite_locations, key=halite_locations.get)
         return new_position #
         
-        # check surrounding locations
-        # for each location chech halite ammount
 
-    def select_move_richness(self, ship: Ship):
-        pass
+    def select_destination_richness(self, ship: Ship, top_clusters):
+        #get closest cluster to ship
+        closest_cluster = None
+        distance_to_cluster = self.game_map.width
+        for cluster in top_clusters:
+            distance = self.game_map.calculate_distance(ship.position, cluster.position)
+            if distance < distance_to_cluster:
+                distance_to_cluster = distance
+                closest_cluster = cluster
+        return closest_cluster.rich_position
+        
 
     def cluster_map(self, top_n: int = 10):
         """returns a list of top clusters"""
@@ -93,6 +107,16 @@ class Cluster:
                 except Exception:
                     logging.warn(f"can't find cell at {(x,y)}")
         
+
+    @property 
+    def position(self):
+        return self.cluster_center.position
+
+    @property
+    def rich_position(self):
+        clusters = {cluster.position: cluster.halite_amount for cluster in self.cluster}
+        high_val_pos = max(clusters, key=clusters.get)
+        return high_val_pos
 
     @property
     def halite_amount(self):
@@ -133,7 +157,7 @@ directions = [
 
 MAX_HALITE = constants.MAX_HALITE
 MAX_TURNS = constants.MAX_TURNS
-game.ready("Snowcola_v4")
+game.ready("Snowcola_v5")
 
 # Now that your bot is initialized, save a message to yourself in the log file with some important information.
 #   Here, you log here your id, which you can always fetch from the game object by using my_id.
@@ -144,10 +168,10 @@ logging.info("Successfully created bot! My Player ID is {}.".format(
 ship_states = {}
 endstage = constants.MAX_TURNS - 10
 shipyard_cards = game.me.shipyard.position.get_surrounding_cardinals()
-logging.info(directions[:4])
 
 nav = Navigation(game.game_map, game.me)
-logging.info(f"Cluster Map {nav.cluster_map()}")
+cluster_map = nav.cluster_map()
+
 while True:
 
     game.update_frame()
@@ -161,7 +185,13 @@ while True:
     # reset current moves in ship state
     [shipstate.reset_moves() for shipstate in ship_states.values()]
     
-    turns_to_recall = nav.farthest_ship_distance()+len(ship_states)*0.5
+    # recalc clusters every n turns
+    recalc_intervals=[75, 150, 225, 300, 375, 450, 525]
+    if game.turn_number in recalc_intervals:
+        cluster_map = nav.cluster_map()
+    logging.info(f"Cluster Map {cluster_map}")
+
+    turns_to_recall = nav.farthest_ship_distance()+len(ship_states)*0.3
 
     for ship in me.get_ships():
         cur_loc_halite = game_map[ship.position].halite_amount
@@ -173,13 +203,16 @@ while True:
         prev_move = ship_states[ship.id].prev_move
 
         if MAX_TURNS - game.turn_number <= turns_to_recall:
+            
             if ship.position in shipyard_cards:
+                
                 move = game_map.naive_navigate(ship, me.shipyard.position)
                 command_queue.append(ship.move(move))
-                game_map[me.shipyard.position].ship = None
+                
             else:
                 move = game_map.naive_navigate(ship, random.choice(shipyard_cards))
                 command_queue.append(ship.move(move))
+            game_map[me.shipyard.position].ship = None
 
         elif ship_states[ship.id].mode == Modes.collecting:
             if ship.halite_amount > MAX_HALITE * 0.95:
@@ -187,7 +220,11 @@ while True:
 
 
             if nav.should_move(ship):
-                destination = nav.select_move_hueristic(ship)
+                if game_map.calculate_distance(ship.position, me.shipyard.position) < 1:
+                    destination = nav.select_move_hueristic(ship)
+                else:
+                    intermediate_dest = nav.select_destination_richness(ship, cluster_map)
+                    destination = nav.select_move_hueristic(ship, destination=intermediate_dest)
 
                 if destination not in confirmed_moves:
                     if prev_move is not Direction.Still:
@@ -196,6 +233,7 @@ while True:
                         command_queue.append(ship.move(move))
                         ship_states[ship.id].prev_move = move
                     else: 
+                        logging.warn(f"Ship {ship.id} stuck")
                         dest = ship.position.directional_offset(random.choice(directions))
                         move = game_map.naive_navigate(ship, dest)
                         ship_states[ship.id].prev_move = move
