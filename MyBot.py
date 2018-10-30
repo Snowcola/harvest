@@ -187,8 +187,8 @@ while True:
     
     # recalc clusters every n turns
     recalc_intervals=[75, 150, 225, 300, 375, 450, 525]
-    if game.turn_number in recalc_intervals:
-        cluster_map = nav.cluster_map()
+    #if game.turn_number in recalc_intervals:
+    cluster_map = nav.cluster_map()
     logging.info(f"Cluster Map {cluster_map}")
 
     turns_to_recall = nav.farthest_ship_distance()+len(ship_states)*0.3
@@ -253,7 +253,9 @@ while True:
 
             else:
                 ship_states[ship.id].mode = Modes.collecting
-                move = game_map.naive_navigate(ship, Position(0, 0))
+                intermediate_dest = nav.select_destination_richness(ship, cluster_map)
+                destination = nav.select_move_hueristic(ship, destination=intermediate_dest)
+                move = game_map.naive_navigate(ship, destination)
                 command_queue.append(ship.move(move))
 
     # If the game is in the first 200 turns and you have enough halite, spawn a ship.
