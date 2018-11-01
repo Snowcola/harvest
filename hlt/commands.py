@@ -10,4 +10,3 @@ STAY_STILL = 'o'
 GENERATE = 'g'
 CONSTRUCT = 'c'
 MOVE = 'm'
-
