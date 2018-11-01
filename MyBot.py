@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Python 3.6
 import hlt
-from hlt import constants
+from hlt.constants import MAX_HALITE, MAX_TURNS
 from hlt.positionals import Direction
 import logging
 from modes import Modes
@@ -15,8 +15,6 @@ directions = [
     Direction.North, Direction.South, Direction.East, Direction.West,
     Direction.Still
 ]
-MAX_HALITE = constants.MAX_HALITE
-MAX_TURNS = constants.MAX_TURNS
 
 # official game start
 game.ready("Snowcola_v9")
