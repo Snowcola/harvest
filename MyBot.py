@@ -16,8 +16,13 @@ class Navigation:
         self.player = player
         self.ships = player.get_ships()
         self.bases = [player.shipyard] + player.get_dropoffs()
-        logging.info(f"ships :{player.get_dropoffs()+[self.player.shipyard]}")
+        self.ship_states = {}  # {ship.id: ShipState()}
+        self.top_clusters = None
+        self.command_queue = []
+        PROD_STOP_TURN = 220
+
         # TODO: make cluster map a prop of navi class
+
     def farthest_ship_distance(self) -> int:
         bases = self.bases
         ships = self.ships
@@ -36,6 +41,13 @@ class Navigation:
         else:
             return 0
 
+    def _initialize_ship_states(self):
+        """initialize all newly created ships with a default ship state"""
+        for ship in self.ships:
+            if ship.id not in self.ship_states:
+                state = ShipState(Modes.collecting)
+                self.ship_states[ship.id] = state
+
     def start_positions(self):
         staring_positions = self.player.shipyard.position.get_surrounding_cardinals(
         )
@@ -53,10 +65,14 @@ class Navigation:
     def should_move(self, ship: Ship):
         return self.can_afford_move(ship) and self.low_hal_location(ship)
 
-    def update(self, game_map: GameMap, player: Player):
-        self.game_map = game_map
-        self.player = player
-        self.ships = player.get_ships()
+    def update(self, game: hlt.Game):
+        """update all game data and reset turn specific info"""
+        self.game_map = game.game_map
+        self.player = game.me
+        self.ships = me.get_ships()
+        self.command_queue = []
+        self._initialize_ship_states()
+        self._reset_current_moves()
 
     def select_move_hueristic(self, ship: Ship, destination: Position = None):
         surrounding_positions = ship.position.get_surrounding_cardinals()
@@ -106,7 +122,7 @@ class Navigation:
                 return True
         return False
 
-    def cluster_map(self, top_n: int = 5):
+    def richest_clusters(self, top_n: int = 5):
         """returns a list of top clusters"""
         all_halite = {
             cell.position: Cluster(self.game_map, cell).halite_amount
@@ -118,8 +134,18 @@ class Navigation:
             Cluster(self.game_map, self.game_map[cell])
             for cell in sorted_cells
         ]
+        self.top_clusters = top_clusters
 
-        return top_clusters
+    def _reset_current_moves(self):
+        [ship.reset_moves() for ship in self.ship_states.values()]
+
+    def command(self, command):
+        self.command_queue.append(command)
+
+    def can_produce(self):
+        return (game.turn_number <= self.PROD_STOP_TURN
+                and self.player.halite_amount >= constants.SHIP_COST
+                and not self.game_map[me.shipyard].is_occupied)
 
 
 class Cluster:
@@ -162,10 +188,11 @@ class Cluster:
 
 
 class ShipState:
-    def __init__(self, mode, prev_move=None):
+    def __init__(self, mode, destination=None, prev_move=None):
         self.mode = mode
         self.prev_move = prev_move
         self.current_move = None
+        self.destination = destination
 
     def reset_moves(self):
         self.current_move = None
@@ -174,142 +201,46 @@ class ShipState:
         return f"ShipState(mode: {self.mode}, prev_move:{self.prev_move}"
 
 
-## RANDOMIZE NAVIGATION DIRECTION
-""" <<<Game Begin>>> """
-
 # This game object contains the initial game state.
 game = hlt.Game()
-# At this point "game" variable is populated with initial map data.
-# This is a good place to do computationally expensive start-up pre-processing.
-# As soon as you call "ready" function below, the 2 second per turn timer will start.
+
+# initialize constants
 directions = [
     Direction.North, Direction.South, Direction.East, Direction.West,
     Direction.Still
 ]
-
 MAX_HALITE = constants.MAX_HALITE
 MAX_TURNS = constants.MAX_TURNS
-game.ready("Snowcola_v6")
-
-# Now that your bot is initialized, save a message to yourself in the log file with some important information.
-#   Here, you log here your id, which you can always fetch from the game object by using my_id.
-logging.info("Successfully created bot! My Player ID is {}.".format(
-    game.my_id))
-""" <<<Game Loop>>> """
-
-ship_states = {}
-endstage = constants.MAX_TURNS - 10
 shipyard_cards = game.me.shipyard.position.get_surrounding_cardinals()
 
+# official game start
+game.ready("Snowcola_v9")
+# log bot id to log
+logging.info("Successfully created bot! My Player ID is {}.".format(
+    game.my_id))
+
+# initialize map and starting cluster map
 nav = Navigation(game.game_map, game.me)
-cluster_map = nav.cluster_map()
+cluster_map = nav.richest_clusters()
+
+#                 #
+# Start Game Loop #
+#                 #
 
 while True:
-
+    # get latest gamestate info from the halite engine
     game.update_frame()
-    me = game.me
     game_map = game.game_map
-    nav.update(game_map, me)
-    logging.info(
-        f"shipyard surrounded: {nav.dropoff_surrounded(me.shipyard.position)}")
+    me = game.me
+    ships = me.get_ships()
 
-    confirmed_moves = []
-    command_queue = []
+    # update bot data
+    nav.update(game)
 
-    # reset current moves in ship state
-    [shipstate.reset_moves() for shipstate in ship_states.values()]
+    # set destinations
 
-    # recalc clusters every n turns
-    recalc_intervals = [75, 150, 225, 300, 375, 450, 525]
-    #if game.turn_number in recalc_intervals:
-    cluster_map = nav.cluster_map()
-    logging.info(f"Cluster Map {cluster_map}")
-
-    turns_to_recall = nav.farthest_ship_distance() + len(ship_states) * 0.3
-
-    for ship in me.get_ships():
-        cur_loc_halite = game_map[ship.position].halite_amount
-
-        if ship.id not in ship_states.keys():
-            ship_states[ship.id] = ShipState(Modes.collecting)
-
-        prev_move = ship_states[ship.id].prev_move
-
-        if MAX_TURNS - game.turn_number <= turns_to_recall:
-
-            if ship.position in shipyard_cards:
-
-                move = game_map.naive_navigate(ship, me.shipyard.position)
-                command_queue.append(ship.move(move))
-
-            else:
-                move = game_map.naive_navigate(ship,
-                                               random.choice(shipyard_cards))
-                command_queue.append(ship.move(move))
-            game_map[me.shipyard.position].ship = None
-
-        elif ship_states[ship.id].mode == Modes.collecting:
-            if ship.halite_amount > MAX_HALITE * 0.95:
-                ship_states[ship.id].mode = Modes.depositing
-
-            if nav.should_move(ship):
-                if game_map.calculate_distance(
-                        ship.position, me.shipyard.position
-                ) < 1 or game.turn_number < MAX_TURNS * .1:
-                    destination = nav.select_move_hueristic(ship)
-                else:
-                    intermediate_dest = nav.select_destination_richness(
-                        ship, cluster_map)
-                    destination = nav.select_move_hueristic(
-                        ship, destination=intermediate_dest)
-
-                if destination not in confirmed_moves:
-                    if prev_move is not Direction.Still:
-                        confirmed_moves.append(destination)
-                        move = game_map.naive_navigate(ship, destination)
-                        command_queue.append(ship.move(move))
-                        ship_states[ship.id].prev_move = move
-                    else:
-                        dest = ship.position.directional_offset(
-                            random.choice(directions))
-                        move = game_map.naive_navigate(ship, dest)
-                        ship_states[ship.id].prev_move = move
-                        command_queue.append(ship.move(move))
-                else:
-                    best_direction = Direction.Still
-                    confirmed_moves.append(ship.position)
-                    command_queue.append(ship.stay_still())
-
-            else:
-                command_queue.append(ship.stay_still())
-
-        elif ship_states[ship.id].mode == Modes.depositing:
-            if nav.dropoff_surrounded(me.shipyard.position):
-                move = game_map.naive_navigate(ship, me.shipyard.position)
-                # invert move and add to command queue
-                command_queue.append(ship.move(Direction.invert(move)))
-            elif ship.halite_amount > 0:
-                move = game_map.naive_navigate(ship, me.shipyard.position)
-                command_queue.append(ship.move(move))
-
-            else:
-                ship_states[ship.id].mode = Modes.collecting
-                intermediate_dest = nav.select_destination_richness(
-                    ship, cluster_map)
-                destination = nav.select_move_hueristic(
-                    ship, destination=intermediate_dest)
-                destination = intermediate_dest
-                #move = game_map.naive_navigate(ship, destination)
-                move = game_map.naive_navigate(ship,
-                                               random.choice(shipyard_cards))
-                command_queue.append(ship.move(move))
-                logging.info(f"ship {ship.id} just dropped off halite")
-
-    # If the game is in the first 200 turns and you have enough halite, spawn a ship.
-    # Don't spawn a ship if you currently have a ship at port, though - the ships will collide.
-    if game.turn_number <= 220 and me.halite_amount >= constants.SHIP_COST and not game_map[me.
-                                                                                            shipyard].is_occupied:
-        command_queue.append(me.shipyard.spawn())
+    if nav.can_produce():
+        nav.command(me.shipyard.spawn())
 
     # Send your moves back to the game environment, ending this turn.
-    game.end_turn(command_queue)
+    game.end_turn(nav.command_queue)
