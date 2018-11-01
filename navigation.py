@@ -4,6 +4,7 @@ from hlt.positionals import Position
 from hlt.game_map import GameMap, Player, MapCell
 from hlt.entity import Ship
 from modes import Modes
+import logging
 
 
 class Navigation:
