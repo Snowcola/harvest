@@ -1,14 +1,15 @@
 import hlt
-from hlt import constants
-from hlt.positionals import Position
+from hlt import constants, Game
+from hlt.positionals import Position, Direction
 from hlt.game_map import GameMap, Player, MapCell
 from hlt.entity import Ship
 from modes import Modes
 import logging
+import random
 
 
 class Navigation:
-    def __init__(self, game):
+    def __init__(self, game: Game):
         self.game = game
         self.game_map = game.game_map
         self.player = game.me
@@ -18,8 +19,18 @@ class Navigation:
         self.top_clusters = None
         self.command_queue = []
         self.PROD_STOP_TURN = 220
+        self.game_mode = Modes.NORMAL
 
-        # TODO: make cluster map a prop of navi class
+    def state(self, ship):
+        return self.ship_states[ship.id]
+
+    def closest_dropoff(self, ship):
+        min_dist = 9000
+        closest_base = None
+        for base in self.bases:
+            if self.game_map.calculate_distance(ship.position, base.position) < min_dist:
+                closest_base = base
+        return closest_base.position
 
     def farthest_ship_distance(self) -> int:
         bases = self.bases
@@ -39,11 +50,19 @@ class Navigation:
         else:
             return 0
 
+    def check_endgame(self):
+        turns_to_recall = self.farthest_ship_distance() + len(self.ships)* 0.3
+        turns_left = constants.MAX_TURNS - self.game.turn_number
+        if turns_left < turns_to_recall:
+            for ship in self.ships:
+                self.game_mode = Modes.ENDGAME
+                self.ship_states[ship.id].destination = self.closest_dropoff(ship)
+
     def _initialize_ship_states(self):
         """initialize all newly created ships with a default ship state"""
         for ship in self.ships:
             if ship.id not in self.ship_states:
-                state = ShipState(Modes.collecting)
+                state = ShipState(Modes.COLLECTING)
                 self.ship_states[ship.id] = state
 
     def start_positions(self):
@@ -59,6 +78,7 @@ class Navigation:
     def low_hal_location(self, ship: Ship):
         return self.game_map[ship.
                              position].halite_amount < constants.MAX_HALITE * 0.1
+                             # TODO: MAKE THIS BASED ON A USER DEFINED PARAM
 
     def should_move(self, ship: Ship):
         return self.can_afford_move(ship) and self.low_hal_location(ship)
@@ -71,6 +91,8 @@ class Navigation:
         self.command_queue = []
         self._initialize_ship_states()
         self._reset_current_moves()
+        self.richest_clusters()
+        self.check_endgame()
 
     def select_move_hueristic(self, ship: Ship, destination: Position = None):
         surrounding_positions = ship.position.get_surrounding_cardinals()
@@ -92,17 +114,18 @@ class Navigation:
         new_position = max(halite_locations, key=halite_locations.get)
         return new_position  #
 
-    def select_destination_richness(self, ship: Ship, top_clusters):
+    def select_rich_destination(self, ship: Ship):
         # get closest cluster to ship
         closest_cluster = None
         distance_to_cluster = self.game_map.width
-        for cluster in top_clusters:
+        for cluster in self.top_clusters:
             distance = self.game_map.calculate_distance(
                 ship.position, cluster.position)
             if distance < distance_to_cluster:
                 distance_to_cluster = distance
                 closest_cluster = cluster
-        return closest_cluster.rich_position
+        #self.ship_states[ship.id].destination = closest_cluster.rich_position
+        self.ship_states[ship.id].destination = random.choice(self.top_clusters).position
 
     def unstuck(self, ship: Ship):
         pass
@@ -122,17 +145,19 @@ class Navigation:
 
     def richest_clusters(self, top_n: int = 5):
         """returns a list of top clusters"""
-        all_halite = {
-            cell.position: Cluster(self.game_map, cell).halite_amount
-            for cell in self.game_map
-        }
-        sorted_cells = sorted(all_halite, key=all_halite.get, reverse=True)
+        spread_clusters = {}
+        for x in range(self.game_map.width):
+            if x == 1 or (x-1)%3 == 0:
+                for y in range(self.game_map.height):
+                    if y == 1 or (y-1)%3 == 0:
+                        cell = self.game_map[Position(x,y)]
+                        spread_clusters[Position(x,y)] = Cluster(self.game_map, cell)
+
+        sorted_cells = sorted(spread_clusters.values(), reverse=True)
         sorted_cells = sorted_cells[:top_n]
-        top_clusters = [
-            Cluster(self.game_map, self.game_map[cell])
-            for cell in sorted_cells
-        ]
-        self.top_clusters = top_clusters
+        logging.info(sorted_cells)
+        
+        self.top_clusters = sorted_cells
 
     def _reset_current_moves(self):
         [ship.reset_moves() for ship in self.ship_states.values()]
@@ -144,6 +169,72 @@ class Navigation:
         return (self.game.turn_number <= self.PROD_STOP_TURN
                 and self.player.halite_amount >= constants.SHIP_COST
                 and not self.game_map[self.player.shipyard].is_occupied)
+
+    def go_home(self, ship) -> Position:
+        """
+        Set destination to closest dropoff point \n
+        Changes mode to 'deositing'
+        """
+        self.ship_states[ship.id].destination = self.closest_dropoff(ship)
+        self.ship_states[ship.id].mode = Modes.DEPOSITING
+
+    def going_home(self, ship):
+        base_poitions = [base.position for base in self.bases]
+        return ship.position in base_poitions
+
+    def navigate_max_halite(self, ship):
+        destination = self.ship_states[ship.id].destination
+        possible_moves = self.game_map.get_unsafe_moves(ship.position, destination)
+        possible_positions = [ship.position.directional_offset(move) for move in possible_moves]
+        halite_locations = {position: self.game_map[position].halite_amount
+                            for position in possible_positions}
+        halite_locations[ship.position] = self.game_map[ship.position].halite_amount * 1.8
+        new_positions = sorted(halite_locations, key=halite_locations.get, reverse=True)
+        
+        move = self.move_safe(ship, new_positions)
+        self.command(ship.move(move))
+
+    def move_safe(self, ship, positions):
+        """ 
+        Chooses first safe cell in directions list to navigat into
+        """
+        new_moves = []
+        for position in positions:
+            move = position - ship.position
+            new_moves.append((move.x, move.y))
+
+        for i, cell in enumerate(positions):
+            if not self.game_map[cell].is_occupied:
+                self.game_map[cell].mark_unsafe(ship)
+                return new_moves[i]
+
+        return Direction.Still
+
+    def stay_still(self, ship: Ship):
+        self.command(ship.stay_still())
+
+    def navigate_bline(self, ship):
+        destination = self.ship_states[ship.id].destination
+        move = self.game_map.naive_navigate(ship, destination)
+        self.command(ship.move(move))
+
+    def deposit_complete(self, ship):
+        return (self.going_home(ship)) and (ship.halite_amount == 0)
+
+    def dest_halite(self, ship):
+        return self.game_map[self.ship_states[ship.id].destination].halite_amount
+
+    def set_mode(self, ship, mode):
+        self.ship_states[ship.id].mode = mode
+
+    def kamikaze(self, ship):
+        destination = self.ship_states[ship.id].destination
+        moves = self.game_map.get_unsafe_moves(ship.position, destination)
+        random.shuffle(moves)
+        if moves:
+            self.command(ship.move(moves[0]))
+        else:
+            logging.info(f"ship at dropoff {ship.position == destination}, ")
 
 
 class Cluster:
@@ -180,6 +271,24 @@ class Cluster:
         :return: total halite amount in 9 cell cluster
         """
         return (sum([cell.halite_amount for cell in self.cluster]))
+
+    def __eq__(self, other):
+        return self.halite_amount == other.halite_amount
+    
+    def __ne__(self, other):
+        return not self.__eq__(other)
+
+    def __gt__(self, other):
+        return self.halite_amount > other.halite_amount
+
+    def __ge__(self, other):
+        return self.halite_amount >= other.halite_amount
+
+    def __lt__(self, other):
+        return self.halite_amount < other.halite_amount
+
+    def __le__(self, other):
+        return self.halite_amount <= other.halite_amount
 
     def __repr__(self):
         return f"Cluster {self.cluster_center}, halite: {self.halite_amount}"

@@ -1,7 +1,7 @@
 #!/usr/bin/env python3
 # Python 3.6
 import hlt
-from hlt.constants import MAX_HALITE, MAX_TURNS
+from hlt import constants 
 from hlt.positionals import Direction
 import logging
 from modes import Modes
@@ -11,6 +11,10 @@ from navigation import Navigation
 game = hlt.Game()
 
 # initialize constants
+MAX_HALITE = constants.MAX_HALITE
+MAX_TURNS = constants.MAX_TURNS
+HALITE_THRESHOLD = MAX_HALITE * 0.1
+SHIP_FULL = MAX_HALITE * 0.95
 directions = [
     Direction.North, Direction.South, Direction.East, Direction.West,
     Direction.Still
@@ -39,9 +43,51 @@ while True:
     # update bot data
     nav.update(game)
 
-    # set destinations
+    for ship in ships: 
+        state = nav.state(ship) 
 
-    # handout nav instructions
+        #                   #
+        # set destinations  #
+        #                   #
+
+        if state.mode is Modes.COLLECTING:
+            # TODO: need method detect and unstick to get ship unstuck
+            if ship.halite_amount >= SHIP_FULL and state.destination:
+                # go to nearest dropoff point
+                nav.go_home(ship) 
+
+            elif not state.destination or nav.dest_halite(ship) < HALITE_THRESHOLD:
+                # go to nearest high value halite cluster
+                nav.select_rich_destination(ship) 
+
+        elif state.mode is Modes.DEPOSITING:
+            if nav.deposit_complete(ship):
+                # go to nearest high value halite cluster and 
+                # switch to collection mode
+                nav.select_rich_destination(ship)
+                nav.set_mode(ship, Modes.COLLECTING)
+
+            elif not nav.going_home(ship) or not state.destination:
+                nav.go_home(ship)
+
+        #                #
+        # calculate move #
+        #                #
+        
+        # special case to ignore collisions at end game
+        if nav.game_mode is Modes.ENDGAME:
+            nav.kamikaze(ship)
+            # TODO: only invovke this when right next to the dropoff
+
+        # handout nav instructions
+        elif (state.mode is Modes.COLLECTING and nav.should_move(ship)):
+            nav.navigate_max_halite(ship)
+
+        elif state.mode is Modes.DEPOSITING: 
+            nav.navigate_bline(ship)
+        else:
+            nav.stay_still(ship)
+
 
     if nav.can_produce():
         nav.command(me.shipyard.spawn())

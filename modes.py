@@ -1,4 +1,5 @@
 class Modes:
-    collecting = "COLLECTING"
-    depositing = "DEPOSITING"
-    endgame = "ENDGAME"
+    COLLECTING = "COLLECTING"
+    DEPOSITING = "DEPOSITING"
+    ENDGAME = "ENDGAME"
+    NORMAL = "NORMAL"
