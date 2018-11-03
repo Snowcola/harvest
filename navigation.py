@@ -70,6 +70,14 @@ class Navigation:
         )
         return staring_positions
 
+    def avoid(self, destination):
+        if destination is Direction.North or destination is Direction.South:
+            return self.safe_direction([Direction.East, Direction.West])
+        elif destination is Direction.West or destination is Direction.East:
+            return self.safe_direction([Direction.North, Direction.South])
+        else: 
+            return Direction.Still
+
     def can_afford_move(self, ship: Ship):
         location_halite = self.game_map[ship.position].halite_amount
         move_cost = location_halite * 0.1
@@ -130,8 +138,14 @@ class Navigation:
     def unstuck(self, ship: Ship):
         pass
 
-    def leave_dropoff(self, dropoff: Position):
-        pass
+    def leave_dropoff(self, ship):
+        """
+        Command a ship to leave a dropoff only moving to a safe cell
+        """
+        possible_dests = ship.position.get_surrounding_cardinals()
+        random.shuffle(possible_dests)
+        move = self.move_safe(ship, possible_dests)
+        self.command(ship.move(move))
 
     def dropoff_surrounded(self, dropoff: Position):
         if self.game_map[dropoff].is_occupied:
@@ -192,7 +206,18 @@ class Navigation:
         new_positions = sorted(halite_locations, key=halite_locations.get, reverse=True)
         
         move = self.move_safe(ship, new_positions)
+        # prevent from moving back on to dropoff
+        move = self.avoid_dropoffs(ship, move)
         self.command(ship.move(move))
+        
+
+    def avoid_dropoffs(self, ship, move):
+        move_cell = self.game_map[ship.position.directional_offset(move)]
+        if move_cell.has_structure:
+            move_cell.ship = None
+            new_move = self.avoid(move)
+            return new_move
+        return move
 
     def move_safe(self, ship, positions):
         """ 
@@ -210,6 +235,14 @@ class Navigation:
 
         return Direction.Still
 
+    def safe_direction(self, ship, directions):
+        positions = [ship.position.directional_offset(direction) for direction in directions]
+        for i, cell in enumerate(positions):
+            if not self.game_map[cell].is_occupied:
+                self.game_map[cell].mark_unsafe(ship)
+                return directions[i]
+        return Direction.Still        
+
     def stay_still(self, ship: Ship):
         self.command(ship.stay_still())
 
@@ -226,6 +259,10 @@ class Navigation:
 
     def set_mode(self, ship, mode):
         self.ship_states[ship.id].mode = mode
+
+    def on_dropoff(self, ship):
+        base_positions = [base.position for base in self.bases]
+        return ship.position in base_positions
 
     def kamikaze(self, ship):
         destination = self.ship_states[ship.id].destination
@@ -300,6 +337,7 @@ class ShipState:
         self.prev_move = prev_move
         self.current_move = None
         self.destination = destination
+        self.preferred_move = None #not currently implemented
 
     def reset_moves(self):
         self.current_move = None

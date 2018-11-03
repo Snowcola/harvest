@@ -80,8 +80,15 @@ while True:
             # TODO: only invovke this when right next to the dropoff
 
         # handout nav instructions
-        elif (state.mode is Modes.COLLECTING and nav.should_move(ship)):
-            nav.navigate_max_halite(ship)
+        elif state.mode is Modes.COLLECTING: 
+            if nav.on_dropoff(ship): 
+                nav.leave_dropoff(ship)
+
+            elif  nav.should_move(ship):
+                nav.navigate_max_halite(ship)
+            
+            else:
+                nav.stay_still(ship)
 
         elif state.mode is Modes.DEPOSITING: 
             nav.navigate_bline(ship)
@@ -90,6 +97,7 @@ while True:
 
 
     if nav.can_produce():
+        #add class method for this
         nav.command(me.shipyard.spawn())
 
     # Send your moves back to the game environment, ending this turn.
