@@ -43,7 +43,7 @@ while True:
     # update bot data
     nav.update(game)
 
-    nav.report_game_state()
+   
 
     for ship in ships: 
         state = nav.state(ship) 
@@ -106,7 +106,8 @@ while True:
 
     if nav.can_produce():
         #add class method for this
-        nav.command(me.shipyard.spawn())
+        nav.command(me.shipyard, me.shipyard.spawn())
 
+    nav.report_game_state()
     # Send your moves back to the game environment, ending this turn.
     game.end_turn(nav.command_queue)

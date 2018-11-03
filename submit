@@ -11,6 +11,7 @@ for dirname, subdirs, files in os.walk("hlt/"):
         zf.write(os.path.join(dirname, filename))
 zf.write("MyBot.py")
 zf.write("modes.py")
+zf.write("navigation.py")
 zf.close()
 
 

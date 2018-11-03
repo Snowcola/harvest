@@ -20,6 +20,8 @@ class Navigation:
         self.command_queue = []
         self.PROD_STOP_TURN = 220
         self.game_mode = Modes.NORMAL
+        self.commands = {} #{ship.id: (move)}
+        self.commands_queue = {} # {ship.id: command}
 
     def state(self, ship):
         return self.ship_states[ship.id]
@@ -97,6 +99,8 @@ class Navigation:
         self.player = game.me
         self.ships = game.me.get_ships()
         self.command_queue = []
+        self.commands = {}
+        self.commands_queue = {}
         self._initialize_ship_states()
         self._reset_current_moves()
         self.richest_clusters()
@@ -144,8 +148,9 @@ class Navigation:
         """
         possible_dests = ship.position.get_surrounding_cardinals()
         random.shuffle(possible_dests)
+        self.ship_states[ship.id].preferred_move = possible_dests[0]
         move = self.move_safe(ship, possible_dests)
-        self.command(ship.move(move))
+        self.command(ship, ship.move(move), move=move)
 
     def dropoff_surrounded(self, dropoff: Position):
         if self.game_map[dropoff].is_occupied:
@@ -176,7 +181,10 @@ class Navigation:
     def _reset_current_moves(self):
         [ship.reset_moves() for ship in self.ship_states.values()]
 
-    def command(self, command):
+    def command(self, ship, command, move=None):
+        self.commands[ship.id] = move
+        self.commands_queue[ship.id] = command
+
         self.command_queue.append(command)
 
     def can_produce(self):
@@ -205,10 +213,13 @@ class Navigation:
         halite_locations[ship.position] = self.game_map[ship.position].halite_amount * 1.8
         new_positions = sorted(halite_locations, key=halite_locations.get, reverse=True)
         
+        # add best move to preferred moves 
+        self.ship_states[ship.id].preferred_move = new_positions[0]
+
         move = self.move_safe(ship, new_positions)
         # prevent from moving back on to dropoff
         move = self.avoid_dropoffs(ship, move)
-        self.command(ship.move(move))
+        self.command(ship, ship.move(move), move=move)
         
 
     def avoid_dropoffs(self, ship, move):
@@ -221,7 +232,7 @@ class Navigation:
 
     def move_safe(self, ship, positions):
         """ 
-        Chooses first safe cell in directions list to navigat into
+        Chooses first safe cell in directions list to navigate into
         """
         new_moves = []
         for position in positions:
@@ -245,6 +256,8 @@ class Navigation:
 
     def report_game_state(self):
         logging.info(f"Game State: {self.game_mode}")
+        logging.info(f"Commands: {self.commands.items()}")
+        self.process_turn()
 
 
     def adjacent_dest(self, ship):
@@ -253,12 +266,18 @@ class Navigation:
         return ship.position in dest_cards
 
     def stay_still(self, ship: Ship):
-        self.command(ship.stay_still())
+        self.command(ship, ship.stay_still(), move=Direction.Still)
 
     def navigate_bline(self, ship):
         destination = self.ship_states[ship.id].destination
+        unsafe_moves = self.game_map.get_unsafe_moves(ship.position, destination)
+        random.shuffle(unsafe_moves)
+        if not unsafe_moves:
+            self.ship_states[ship.id].preferred_move
+        else:
+            self.ship_states[ship.id].preferred_move = ship.position.directional_offset(unsafe_moves[0])
         move = self.game_map.naive_navigate(ship, destination)
-        self.command(ship.move(move))
+        self.command(ship, ship.move(move), move=move)
 
     def deposit_complete(self, ship):
         return (self.going_home(ship)) and (ship.halite_amount == 0)
@@ -278,9 +297,47 @@ class Navigation:
         moves = self.game_map.get_unsafe_moves(ship.position, destination)
         random.shuffle(moves)
         if moves:
-            self.command(ship.move(moves[0]))
+            self.command(ship, ship.move(moves[0]), move=moves[0])
         else:
             logging.info(f"ship at dropoff {ship.position == destination}, ")
+
+    def process_turn(self):
+        swapped_ships = []
+        for s_id, move in self.commands.items():
+            logging.info
+            if s_id and s_id >= 0 and  s_id not in swapped_ships:
+                ship = self.player.get_ship(s_id)
+                ship_position = ship.position
+                pref_dest = self.ship_states[s_id].preferred_move
+                pref_move = pref_dest - ship_position
+                
+                # check if ship is stuck
+                if move == Direction.Still and (pref_move.x, pref_move.y) is not Direction.Still:
+                    for other_ship in self.ships:
+                        if other_ship.id is not s_id and other_ship.id not in swapped_ships and s_id not in swapped_ships and pref_dest == other_ship.position and self.ship_states[other_ship.id].preferred_move == ship_position:    
+                            logging.warn(f"ships: {s_id} and {other_ship.id} should swap")
+                            swapped_ships.append(s_id)
+                            swapped_ships.append(other_ship.id)
+                            ship_move = other_ship.position - ship_position
+                            other_ship_move = ship_position - other_ship.position
+                            self.commands_queue[s_id] = ship.move((ship_move.x, ship_move.y))
+                            self.commands_queue[other_ship.id] = other_ship.move((other_ship_move.x, other_ship_move.y))
+                            logging.info(f"{self.ship_states[s_id].mode} ship {s_id} at {ship_position} moving to {pref_dest} {pref_move}")
+                            logging.info(f"{self.ship_states[other_ship.id].mode} ship {other_ship.id} at {other_ship.position} moving to {self.ship_states[other_ship.id].preferred_move} {other_ship_move}")
+                            logging.info(f" ship {s_id} command {self.commands_queue[s_id]}")
+                            logging.info(f" ship {other_ship.id} command {self.commands_queue[other_ship.id]}")
+        self.command_queue = self.commands_queue.values()
+
+
+
+
+        # for ships where they were commanded to stay
+        # if their preferred move was not to stay
+        # go through preferred moves and current positions, 
+        # if two ships preferred moved and positions match
+        # set their command to those preferref moves
+        # need to flag
+        pass
 
 
 class Cluster:
@@ -346,7 +403,7 @@ class ShipState:
         self.prev_move = prev_move
         self.current_move = None
         self.destination = destination
-        self.preferred_move = None #not currently implemented
+        self.preferred_move = None 
 
     def reset_moves(self):
         self.current_move = None
