@@ -43,14 +43,19 @@ while True:
     # update bot data
     nav.update(game)
 
+    nav.report_game_state()
+
     for ship in ships: 
         state = nav.state(ship) 
 
         #                   #
         # set destinations  #
         #                   #
+        if nav.game_mode is Modes.ENDGAME:
+            # ensure ships are going to dropoff in engame stage
+            nav.go_home(ship)
 
-        if state.mode is Modes.COLLECTING:
+        elif state.mode is Modes.COLLECTING:
             # TODO: need method detect and unstick to get ship unstuck
             if ship.halite_amount >= SHIP_FULL and state.destination:
                 # go to nearest dropoff point
@@ -76,7 +81,10 @@ while True:
         
         # special case to ignore collisions at end game
         if nav.game_mode is Modes.ENDGAME:
-            nav.kamikaze(ship)
+            if nav.adjacent_dest(ship):
+                nav.kamikaze(ship)
+            else: 
+                nav.navigate_bline(ship)
             # TODO: only invovke this when right next to the dropoff
 
         # handout nav instructions

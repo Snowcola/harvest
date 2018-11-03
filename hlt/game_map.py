@@ -133,7 +133,6 @@ class MapCell:
 
         Use in conjunction with GameMap.naive_navigate.
         """
-        logging.error(f"marking {ship.position} unsafe")
         self.ship = ship
 
     def move_cost(self):

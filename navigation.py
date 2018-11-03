@@ -241,7 +241,16 @@ class Navigation:
             if not self.game_map[cell].is_occupied:
                 self.game_map[cell].mark_unsafe(ship)
                 return directions[i]
-        return Direction.Still        
+        return Direction.Still   
+
+    def report_game_state(self):
+        logging.info(f"Game State: {self.game_mode}")
+
+
+    def adjacent_dest(self, ship):
+        dest = self.ship_states[ship.id].destination
+        dest_cards = dest.get_surrounding_cardinals()
+        return ship.position in dest_cards
 
     def stay_still(self, ship: Ship):
         self.command(ship.stay_still())
