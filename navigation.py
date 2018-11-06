@@ -9,8 +9,9 @@ import random
 import math
 
 CLUSTER_TOBASE = 3
-BASE_POXIMITY_MULTIPLIER = 2.5
+BASE_POXIMITY_MULTIPLIER = 5
 STAY_STILL_WEIGHT = 1.8
+PROD_STOP_TURN = 220
 
 
 class Navigation:
@@ -23,15 +24,27 @@ class Navigation:
         self.ship_states = {}  # {ship.id: ShipState()}
         self.top_clusters = None
         self.command_queue = []
-        self.PROD_STOP_TURN = 220
+        self.PROD_STOP_TURN = PROD_STOP_TURN
         self.game_mode = Modes.NORMAL
         self.commands = {}  #{ship.id: (move)}
         self.commands_queue = {}  # {ship.id: command}
         self.total_halite = 0
         self.inital_halite = 0
+        self.used_positions = []
 
     def state(self, ship):
         return self.ship_states[ship.id]
+
+    def mark_enemy_adjacent_unsafe(self):
+        for bot in self.game:
+            if bot.id is not self.player.id:
+                for ship in bot.get_ships():
+                    north = ship.position.directional_offset(Direction.North)
+                    east = ship.position.directional_offset(Direction.East)
+                    south = ship.position.directional_offset(Direction.South)
+                    west = ship.position.directional_offset(Direction.West)
+                    for cell in [north, east, south, west]:
+                        self.game_map[cell].mark_unsafe(ship)
 
     def closest_dropoff(self, ship):
         min_dist = 9000
@@ -219,8 +232,9 @@ class Navigation:
     def command(self, ship, command, move=None):
         self.commands[ship.id] = move
         self.commands_queue[ship.id] = command
-
         self.command_queue.append(command)
+        if move:
+            self.used_positions.append(ship.position + Position(*move))
 
     def can_produce(self):
         return (self.game.turn_number <= self.PROD_STOP_TURN
@@ -276,6 +290,9 @@ class Navigation:
             return new_move
         return move
 
+    def mark_safe(self, position: Position):
+        self.game_map[position].ship = None
+
     def move_safe(self, ship, positions):
         """ 
         Chooses first safe cell in directions list to navigate into
@@ -309,6 +326,7 @@ class Navigation:
             f"{round((1-self.total_halite/self.inital_halite)*100)}% of halite consumed {self.total_halite} remaining"
         )
         logging.info(f"{self.halite_per_cell} per cell")
+        logging.info(f"{self.used_positions}")
 
     def adjacent_dest(self, ship):
         dest = self.ship_states[ship.id].destination
