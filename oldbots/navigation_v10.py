@@ -3,14 +3,9 @@ from hlt import constants, Game
 from hlt.positionals import Position, Direction
 from hlt.game_map import GameMap, Player, MapCell
 from hlt.entity import Ship
-from modes import Modes
+from modes_v10 import Modes
 import logging
 import random
-import math
-
-CLUSTER_TOBASE = 3
-BASE_POXIMITY_MULTIPLIER = 2.5
-STAY_STILL_WEIGHT = 1.8
 
 
 class Navigation:
@@ -170,16 +165,6 @@ class Navigation:
                 return True
         return False
 
-    def calc_straight_distance(self, source: Position, dest: Position):
-        source = self.game_map.normalize(source)
-        dest = self.game_map.normalize(dest)
-        direction_vector = abs(source - dest)
-        shortest_x = min(direction_vector.x,
-                         self.game_map.width - direction_vector.x)
-        shortest_y = min(direction_vector.y,
-                         self.game_map.height - direction_vector.y)
-        return math.sqrt(shortest_x**2 + shortest_y**2)
-
     def richest_clusters(self, top_n: int = 5):
         """returns a list of top clusters"""
         spread_clusters = {}
@@ -191,14 +176,9 @@ class Navigation:
                         spread_clusters[Position(x, y)] = Cluster(
                             self.game_map, cell)
 
-        for position, cluster in spread_clusters.items():
-            distance = self.calc_straight_distance(
-                position, self.player.shipyard.position)
-            if distance < self.game_map.width / CLUSTER_TOBASE:
-                cluster.halite_multiplier = BASE_POXIMITY_MULTIPLIER
-
         sorted_cells = sorted(spread_clusters.values(), reverse=True)
         sorted_cells = sorted_cells[:top_n]
+        logging.info(sorted_cells)
 
         self.top_clusters = sorted_cells
 
@@ -240,7 +220,7 @@ class Navigation:
             for position in possible_positions
         }
         halite_locations[ship.position] = self.game_map[
-            ship.position].halite_amount * STAY_STILL_WEIGHT
+            ship.position].halite_amount * 1.8
         new_positions = sorted(
             halite_locations, key=halite_locations.get, reverse=True)
 
@@ -289,6 +269,8 @@ class Navigation:
 
     def report_game_state(self):
         logging.info(f"Game State: {self.game_mode}")
+        logging.info(f"Commands: {self.commands.items()}")
+        self.process_turn()
 
     def adjacent_dest(self, ship):
         dest = self.ship_states[ship.id].destination
@@ -354,27 +336,36 @@ class Navigation:
                             logging.warn(
                                 f"ships: {s_id} and {other_ship.id} should swap"
                             )
-
                             swapped_ships.append(s_id)
                             swapped_ships.append(other_ship.id)
                             ship_move = other_ship.position - ship_position
                             other_ship_move = ship_position - other_ship.position
-
-                            try:
-                                self.commands_queue[s_id] = ship.move(
-                                    (ship_move.x, ship_move.y))
-                                self.commands_queue[
-                                    other_ship.id] = other_ship.move(
-                                        (other_ship_move.x, other_ship_move.y))
-                            except IndexError:
-                                logging.error(
-                                    f"incorrect swap detected move {ship_move}  position {ship_position}"
-                                )
-                                logging.error(
-                                    f"incorrect swap detected move {other_ship_move}  position {other_ship.position}"
-                                )
-
+                            self.commands_queue[s_id] = ship.move(
+                                (ship_move.x, ship_move.y))
+                            self.commands_queue[
+                                other_ship.id] = other_ship.move(
+                                    (other_ship_move.x, other_ship_move.y))
+                            logging.info(
+                                f"{self.ship_states[s_id].mode} ship {s_id} at {ship_position} moving to {pref_dest} {pref_move}"
+                            )
+                            logging.info(
+                                f"{self.ship_states[other_ship.id].mode} ship {other_ship.id} at {other_ship.position} moving to {self.ship_states[other_ship.id].preferred_move} {other_ship_move}"
+                            )
+                            logging.info(
+                                f" ship {s_id} command {self.commands_queue[s_id]}"
+                            )
+                            logging.info(
+                                f" ship {other_ship.id} command {self.commands_queue[other_ship.id]}"
+                            )
         self.command_queue = self.commands_queue.values()
+
+        # for ships where they were commanded to stay
+        # if their preferred move was not to stay
+        # go through preferred moves and current positions,
+        # if two ships preferred moved and positions match
+        # set their command to those preferref moves
+        # need to flag
+        pass
 
 
 class Cluster:
@@ -382,7 +373,6 @@ class Cluster:
         self.game_map = game_map
         self.cluster_center = center_cell
         self.cluster = [center_cell]
-        self.halite_multiplier = 1
         for x in range(-1, 2):
             for y in range(-1, 2):
                 try:
@@ -411,8 +401,7 @@ class Cluster:
         """
         :return: total halite amount in 9 cell cluster
         """
-        return (sum([cell.halite_amount
-                     for cell in self.cluster])) * self.halite_multiplier
+        return (sum([cell.halite_amount for cell in self.cluster]))
 
     def __eq__(self, other):
         return self.halite_amount == other.halite_amount

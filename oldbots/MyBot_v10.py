@@ -4,8 +4,8 @@ import hlt
 from hlt import constants
 from hlt.positionals import Direction
 import logging
-from modes import Modes
-from navigation import Navigation
+from modes_v10 import Modes
+from navigation_v10 import Navigation
 
 # This game object contains the initial game state.
 game = hlt.Game()
@@ -21,7 +21,7 @@ directions = [
 ]
 
 # official game start
-game.ready("Snowcola_v11")
+game.ready("Snowcola_v10")
 # log bot id to log
 logging.info("Successfully created bot! My Player ID is {}.".format(
     game.my_id))
@@ -107,6 +107,5 @@ while True:
         nav.command(me.shipyard, me.shipyard.spawn())
 
     nav.report_game_state()
-    nav.process_turn()
     # Send your moves back to the game environment, ending this turn.
     game.end_turn(nav.command_queue)

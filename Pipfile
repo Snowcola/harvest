@@ -5,9 +5,11 @@ name = "pypi"
 
 [packages]
 
+
 [dev-packages]
 black = "*"
 ipython = "*"
+better-exceptions = "*"
 
 [requires]
 python_version = "3.6"
