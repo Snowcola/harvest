@@ -4,12 +4,14 @@ from . import constants
 from .entity import Entity, Shipyard, Ship, Dropoff
 from .positionals import Direction, Position
 from .common import read_input
+import logging
 
 
 class Player:
     """
     Player object containing all items/metadata pertinent to the player.
     """
+
     def __init__(self, player_id, shipyard, halite=0):
         self.id = player_id
         self.shipyard = shipyard
@@ -57,7 +59,6 @@ class Player:
         """
         return ship_id in self._ships
 
-
     @staticmethod
     def _generate():
         """
@@ -65,7 +66,8 @@ class Player:
         :return: The player object
         """
         player, shipyard_x, shipyard_y = map(int, read_input().split())
-        return Player(player, Shipyard(player, -1, Position(shipyard_x, shipyard_y)))
+        return Player(player,
+                      Shipyard(player, -1, Position(shipyard_x, shipyard_y)))
 
     def _update(self, num_ships, num_dropoffs, halite):
         """
@@ -76,12 +78,21 @@ class Player:
         :return: nothing.
         """
         self.halite_amount = halite
-        self._ships = {id: ship for (id, ship) in [Ship._generate(self.id) for _ in range(num_ships)]}
-        self._dropoffs = {id: dropoff for (id, dropoff) in [Dropoff._generate(self.id) for _ in range(num_dropoffs)]}
+        self._ships = {
+            id: ship
+            for (id,
+                 ship) in [Ship._generate(self.id) for _ in range(num_ships)]
+        }
+        self._dropoffs = {
+            id: dropoff
+            for (id, dropoff) in
+            [Dropoff._generate(self.id) for _ in range(num_dropoffs)]
+        }
 
 
 class MapCell:
     """A cell on the game map."""
+
     def __init__(self, position, halite_amount):
         self.position = position
         self.halite_amount = halite_amount
@@ -137,7 +148,8 @@ class MapCell:
         return not self.__eq__(other)
 
     def __str__(self):
-        return 'MapCell({}, halite={})'.format(self.position, self.halite_amount)
+        return 'MapCell({}, halite={})'.format(self.position,
+                                               self.halite_amount)
 
 
 class GameMap:
@@ -147,6 +159,7 @@ class GameMap:
     Can be indexed by a position, or by a contained entity.
     Coordinates start at 0. Coordinates are normalized for you
     """
+
     def __init__(self, cells, width, height):
         self.width = width
         self.height = height
@@ -172,8 +185,6 @@ class GameMap:
             for cell in row:
                 __cells.append(cell)
         return iter(__cells)
-
-
 
     def calculate_distance(self, source, target):
         """
@@ -209,8 +220,10 @@ class GameMap:
         :param target: The target position
         :return: A tuple containing the target Direction. A tuple item (or both) could be None if within same coords
         """
-        return (Direction.South if target.y > source.y else Direction.North if target.y < source.y else None,
-                Direction.East if target.x > source.x else Direction.West if target.x < source.x else None)
+        return (Direction.South if target.y > source.y else Direction.North
+                if target.y < source.y else None, Direction.East
+                if target.x > source.x else Direction.West
+                if target.x < source.x else None)
 
     def get_unsafe_moves(self, source, destination):
         """
@@ -225,14 +238,15 @@ class GameMap:
         destination = self.normalize(destination)
         possible_moves = []
         distance = abs(destination - source)
-        y_cardinality, x_cardinality = self._get_target_direction(source, destination)
+        y_cardinality, x_cardinality = self._get_target_direction(
+            source, destination)
 
         if distance.x != 0:
-            possible_moves.append(x_cardinality if distance.x < (self.width / 2)
-                                  else Direction.invert(x_cardinality))
+            possible_moves.append(x_cardinality if distance.x < (
+                self.width / 2) else Direction.invert(x_cardinality))
         if distance.y != 0:
-            possible_moves.append(y_cardinality if distance.y < (self.height / 2)
-                                  else Direction.invert(y_cardinality))
+            possible_moves.append(y_cardinality if distance.y < (
+                self.height / 2) else Direction.invert(y_cardinality))
         return possible_moves
 
     def naive_navigate(self, ship, destination):
@@ -263,12 +277,13 @@ class GameMap:
         :return: The map object
         """
         map_width, map_height = map(int, read_input().split())
-        game_map = [[None for _ in range(map_width)] for _ in range(map_height)]
+        game_map = [[None for _ in range(map_width)]
+                    for _ in range(map_height)]
         for y_position in range(map_height):
             cells = read_input().split()
             for x_position in range(map_width):
-                game_map[y_position][x_position] = MapCell(Position(x_position, y_position),
-                                                           int(cells[x_position]))
+                game_map[y_position][x_position] = MapCell(
+                    Position(x_position, y_position), int(cells[x_position]))
         return GameMap(game_map, map_width, map_height)
 
     def _update(self):
