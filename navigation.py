@@ -27,6 +27,8 @@ class Navigation:
         self.game_mode = Modes.NORMAL
         self.commands = {}  #{ship.id: (move)}
         self.commands_queue = {}  # {ship.id: command}
+        self.total_halite = 0
+        self.inital_halite = 0
 
     def state(self, ship):
         return self.ship_states[ship.id]
@@ -105,6 +107,7 @@ class Navigation:
         self.game_map = game.game_map
         self.player = game.me
         self.ships = game.me.get_ships()
+        self.calc_total_halite()
         self.command_queue = []
         self.commands = {}
         self.commands_queue = {}
@@ -180,6 +183,14 @@ class Navigation:
                          self.game_map.height - direction_vector.y)
         return math.sqrt(shortest_x**2 + shortest_y**2)
 
+    def calc_total_halite(self):
+        total_halite = 0
+        for cell in self.game_map:
+            total_halite += cell.halite_amount
+        self.total_halite = total_halite
+        if self.inital_halite == 0:
+            self.inital_halite = total_halite
+
     def richest_clusters(self, top_n: int = 5):
         """returns a list of top clusters"""
         spread_clusters = {}
@@ -228,7 +239,12 @@ class Navigation:
         base_poitions = [base.position for base in self.bases]
         return ship.position in base_poitions
 
+    @property
+    def halite_per_cell(self):
+        return round(self.total_halite / self.game_map.width**2)
+
     def navigate_max_halite(self, ship):
+        # TODO: need to add logic to unmark spaces that we have left
         destination = self.ship_states[ship.id].destination
         possible_moves = self.game_map.get_unsafe_moves(
             ship.position, destination)
@@ -289,6 +305,10 @@ class Navigation:
 
     def report_game_state(self):
         logging.info(f"Game State: {self.game_mode}")
+        logging.info(
+            f"{round((1-self.total_halite/self.inital_halite)*100)}% of halite consumed {self.total_halite} remaining"
+        )
+        logging.info(f"{self.halite_per_cell} per cell")
 
     def adjacent_dest(self, ship):
         dest = self.ship_states[ship.id].destination

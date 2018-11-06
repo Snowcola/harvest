@@ -1,4 +1,4 @@
-#!/usr/bin/env python3
+#!/usr/bin/env python
 # Python 3.6
 
 import os
@@ -14,6 +14,4 @@ zf.write("modes.py")
 zf.write("navigation.py")
 zf.close()
 
-
-files = ["MyBot.py","halite/"]
-
+files = ["MyBot.py", "halite/"]

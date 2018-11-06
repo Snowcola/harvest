@@ -21,7 +21,7 @@ directions = [
 ]
 
 # official game start
-game.ready("Snowcola_v11")
+game.ready("Snowcola_v12")
 # log bot id to log
 logging.info("Successfully created bot! My Player ID is {}.".format(
     game.my_id))
